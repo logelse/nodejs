@@ -1,6 +1,5 @@
 import axios from 'axios';
 import { LogelseClient } from '../src/client';
-import { LogEntry } from '../src/types';
 
 // Mock axios
 jest.mock('axios');
@@ -9,12 +8,9 @@ const mockedAxios = axios as jest.Mocked<typeof axios>;
 describe('LogelseClient', () => {
   let client: LogelseClient;
   const mockApiKey = 'test-api-key';
-  const mockLogEntry: LogEntry = {
-    timestamp: '2026-06-03T18:04:05Z',
-    log_level: 'INFO',
-    message: 'Test log message',
-    app_name: 'Test App',
-    app_uuid: 'test-uuid-123',
+  const mockOptions = {
+    appName: 'test-app',
+    appUuid: 'test-uuid-123'
   };
 
   beforeEach(() => {
@@ -27,21 +23,29 @@ describe('LogelseClient', () => {
     mockedAxios.create.mockReturnValue(mockAxiosInstance as any);
     mockedAxios.isAxiosError.mockReturnValue(false);
     
-    client = new LogelseClient(mockApiKey);
+    client = new LogelseClient(mockApiKey, mockOptions);
   });
 
   describe('constructor', () => {
-    it('should create client with valid API key', () => {
-      expect(() => new LogelseClient(mockApiKey)).not.toThrow();
+    it('should create client with valid API key and options', () => {
+      expect(() => new LogelseClient(mockApiKey, mockOptions)).not.toThrow();
     });
 
     it('should throw error with invalid API key', () => {
-      expect(() => new LogelseClient('')).toThrow('API key is required and must be a string');
-      expect(() => new LogelseClient(null as any)).toThrow('API key is required and must be a string');
+      expect(() => new LogelseClient('', mockOptions)).toThrow('API key is required and must be a string');
+      expect(() => new LogelseClient(null as any, mockOptions)).toThrow('API key is required and must be a string');
+    });
+
+    it('should throw error with missing appName', () => {
+      expect(() => new LogelseClient(mockApiKey, { appUuid: 'test' } as any)).toThrow('appName is required and must be a string');
+    });
+
+    it('should throw error with missing appUuid', () => {
+      expect(() => new LogelseClient(mockApiKey, { appName: 'test' } as any)).toThrow('appUuid is required and must be a string');
     });
 
     it('should use default options when none provided', () => {
-      const client = new LogelseClient(mockApiKey);
+      const client = new LogelseClient(mockApiKey, mockOptions);
       expect(mockedAxios.create).toHaveBeenCalledWith({
         baseURL: 'https://ingst.logelse.com',
         timeout: 5000,
@@ -54,6 +58,7 @@ describe('LogelseClient', () => {
 
     it('should use custom options when provided', () => {
       const customOptions = {
+        ...mockOptions,
         baseUrl: 'https://custom.api.com',
         timeout: 10000,
         retryAttempts: 5,
@@ -74,22 +79,42 @@ describe('LogelseClient', () => {
     });
   });
 
-  describe('log', () => {
+  describe('log method', () => {
     it('should send log entry successfully', async () => {
       const mockAxiosInstance = mockedAxios.create();
       (mockAxiosInstance.post as jest.Mock).mockResolvedValue({ status: 200 });
 
-      await client.log(mockLogEntry);
+      await client.log('INFO', 'Test message');
 
-      expect(mockAxiosInstance.post).toHaveBeenCalledWith('/logs', mockLogEntry);
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith('/logs', expect.objectContaining({
+        log_level: 'INFO',
+        message: 'Test message',
+        app_name: 'test-app',
+        app_uuid: 'test-uuid-123',
+        timestamp: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/)
+      }));
     });
 
-    it('should validate log entry before sending', async () => {
-      const invalidEntry = { ...mockLogEntry, timestamp: '' };
+    it('should use custom timestamp when provided', async () => {
+      const mockAxiosInstance = mockedAxios.create();
+      (mockAxiosInstance.post as jest.Mock).mockResolvedValue({ status: 200 });
 
-      await expect(client.log(invalidEntry)).rejects.toThrow(
-        "Field 'timestamp' is required and must be a string"
-      );
+      const customTimestamp = '2024-01-01T12:00:00Z';
+      await client.log('INFO', 'Test message', customTimestamp);
+
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith('/logs', expect.objectContaining({
+        timestamp: customTimestamp
+      }));
+    });
+
+    it('should validate log level', async () => {
+      await expect(client.log('', 'Test message')).rejects.toThrow('Log level is required and must be a string');
+      await expect(client.log(null as any, 'Test message')).rejects.toThrow('Log level is required and must be a string');
+    });
+
+    it('should validate message', async () => {
+      await expect(client.log('INFO', '')).rejects.toThrow('Message is required and must be a string');
+      await expect(client.log('INFO', null as any)).rejects.toThrow('Message is required and must be a string');
     });
 
     it('should retry on failure', async () => {
@@ -99,7 +124,7 @@ describe('LogelseClient', () => {
         .mockRejectedValueOnce(new Error('Network error'))
         .mockResolvedValue({ status: 200 });
 
-      await client.log(mockLogEntry);
+      await client.log('INFO', 'Test message');
 
       expect(mockAxiosInstance.post).toHaveBeenCalledTimes(3);
     });
@@ -108,97 +133,79 @@ describe('LogelseClient', () => {
       const mockAxiosInstance = mockedAxios.create();
       (mockAxiosInstance.post as jest.Mock).mockRejectedValue(new Error('Network error'));
 
-      const clientWithRetries = new LogelseClient(mockApiKey, { retryAttempts: 2, retryDelay: 10 });
+      const clientWithRetries = new LogelseClient(mockApiKey, { ...mockOptions, retryAttempts: 2, retryDelay: 10 });
 
-      await expect(clientWithRetries.log(mockLogEntry)).rejects.toThrow(
+      await expect(clientWithRetries.log('INFO', 'Test message')).rejects.toThrow(
         'Failed to send log after 2 attempts'
       );
     });
   });
 
-  describe('logBatch', () => {
-    it('should send multiple log entries', async () => {
+  describe('convenience methods', () => {
+    beforeEach(() => {
       const mockAxiosInstance = mockedAxios.create();
       (mockAxiosInstance.post as jest.Mock).mockResolvedValue({ status: 200 });
-
-      const entries = [mockLogEntry, { ...mockLogEntry, message: 'Second message' }];
-      await client.logBatch(entries);
-
-      expect(mockAxiosInstance.post).toHaveBeenCalledTimes(2);
     });
 
-    it('should throw error for empty array', async () => {
-      await expect(client.logBatch([])).rejects.toThrow('Entries must be a non-empty array');
+    it('should send debug log', async () => {
+      const mockAxiosInstance = mockedAxios.create();
+      await client.debug('Debug message');
+
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith('/logs', expect.objectContaining({
+        log_level: 'DEBUG',
+        message: 'Debug message'
+      }));
     });
 
-    it('should validate all entries before sending', async () => {
-      const entries = [
-        mockLogEntry,
-        { ...mockLogEntry, app_name: '' }, // Invalid entry
-      ];
+    it('should send info log', async () => {
+      const mockAxiosInstance = mockedAxios.create();
+      await client.info('Info message');
 
-      await expect(client.logBatch(entries)).rejects.toThrow(
-        "Invalid log entry at index 1: Field 'app_name' is required and must be a string"
-      );
-    });
-  });
-
-  describe('createLogEntry', () => {
-    it('should create log entry with current timestamp', () => {
-      const entry = client.createLogEntry('INFO', 'Test message', 'Test App', 'test-uuid');
-
-      expect(entry).toEqual({
-        timestamp: expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith('/logs', expect.objectContaining({
         log_level: 'INFO',
-        message: 'Test message',
-        app_name: 'Test App',
-        app_uuid: 'test-uuid',
-      });
+        message: 'Info message'
+      }));
     });
-  });
 
-  describe('logMessage', () => {
-    it('should create and send log entry', async () => {
+    it('should send warn log', async () => {
       const mockAxiosInstance = mockedAxios.create();
-      (mockAxiosInstance.post as jest.Mock).mockResolvedValue({ status: 200 });
+      await client.warn('Warning message');
 
-      await client.logMessage('ERROR', 'Error message', 'Test App', 'test-uuid');
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith('/logs', expect.objectContaining({
+        log_level: 'WARN',
+        message: 'Warning message'
+      }));
+    });
+
+    it('should send error log', async () => {
+      const mockAxiosInstance = mockedAxios.create();
+      await client.error('Error message');
 
       expect(mockAxiosInstance.post).toHaveBeenCalledWith('/logs', expect.objectContaining({
         log_level: 'ERROR',
-        message: 'Error message',
-        app_name: 'Test App',
-        app_uuid: 'test-uuid',
+        message: 'Error message'
       }));
     });
-  });
 
-  describe('validation', () => {
-    const testCases = [
-      { field: 'timestamp', value: '', error: "Field 'timestamp' is required and must be a string" },
-      { field: 'log_level', value: '', error: "Field 'log_level' is required and must be a string" },
-      { field: 'message', value: '', error: "Field 'message' is required and must be a string" },
-      { field: 'app_name', value: '', error: "Field 'app_name' is required and must be a string" },
-      { field: 'app_uuid', value: '', error: "Field 'app_uuid' is required and must be a string" },
-    ];
+    it('should send fatal log', async () => {
+      const mockAxiosInstance = mockedAxios.create();
+      await client.fatal('Fatal message');
 
-    testCases.forEach(({ field, value, error }) => {
-      it(`should validate ${field} field`, async () => {
-        const invalidEntry = { ...mockLogEntry, [field]: value };
-        await expect(client.log(invalidEntry)).rejects.toThrow(error);
-      });
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith('/logs', expect.objectContaining({
+        log_level: 'FATAL',
+        message: 'Fatal message'
+      }));
     });
 
-    it('should validate timestamp format', async () => {
-      const invalidEntry = { ...mockLogEntry, timestamp: 'invalid-date' };
-      await expect(client.log(invalidEntry)).rejects.toThrow(
-        'Timestamp must be a valid ISO 8601 date string'
-      );
-    });
+    it('should accept custom timestamp in convenience methods', async () => {
+      const mockAxiosInstance = mockedAxios.create();
+      const customTimestamp = '2024-01-01T12:00:00Z';
+      
+      await client.info('Info message', customTimestamp);
 
-    it('should reject non-object entries', async () => {
-      await expect(client.log(null as any)).rejects.toThrow('Log entry must be an object');
-      await expect(client.log('string' as any)).rejects.toThrow('Log entry must be an object');
+      expect(mockAxiosInstance.post).toHaveBeenCalledWith('/logs', expect.objectContaining({
+        timestamp: customTimestamp
+      }));
     });
   });
 
@@ -217,7 +224,7 @@ describe('LogelseClient', () => {
       mockedAxios.isAxiosError.mockReturnValue(true);
       (mockAxiosInstance.post as jest.Mock).mockRejectedValue(axiosError);
 
-      await expect(client.log(mockLogEntry)).rejects.toThrow(
+      await expect(client.log('INFO', 'Test message')).rejects.toThrow(
         'Failed to send log after 3 attempts: HTTP 400: Bad Request'
       );
     });
@@ -232,7 +239,7 @@ describe('LogelseClient', () => {
       mockedAxios.isAxiosError.mockReturnValue(true);
       (mockAxiosInstance.post as jest.Mock).mockRejectedValue(axiosError);
 
-      await expect(client.log(mockLogEntry)).rejects.toThrow(
+      await expect(client.log('INFO', 'Test message')).rejects.toThrow(
         'Failed to send log after 3 attempts: Network error: Network Error'
       );
     });
@@ -241,7 +248,7 @@ describe('LogelseClient', () => {
       const mockAxiosInstance = mockedAxios.create();
       (mockAxiosInstance.post as jest.Mock).mockRejectedValue(new Error('Generic error'));
 
-      await expect(client.log(mockLogEntry)).rejects.toThrow(
+      await expect(client.log('INFO', 'Test message')).rejects.toThrow(
         'Failed to send log after 3 attempts: Generic error'
       );
     });

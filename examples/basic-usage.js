@@ -1,38 +1,38 @@
 /**
  * Basic usage example for @logelse/nodejs
- * This example shows how to use the SDK in a simple Node.js application
+ * This example shows the simplified API usage
  */
 
 const { LogelseClient } = require('@logelse/nodejs');
 
 async function basicExample() {
-  // Initialize the client with your API key
-  const client = new LogelseClient('YOUR_API_KEY_HERE');
+  // Initialize the client with API key and app info
+  const logger = new LogelseClient('YOUR_API_KEY_HERE', {
+    appName: 'my-app',
+    appUuid: 'app-123'
+  });
 
   try {
-    // Example 1: Simple log message
-    await client.logMessage('INFO', 'Application started successfully', 'my-app', 'app-123');
-    console.log('✓ Log sent successfully');
+    // Simple logging with convenience methods
+    await logger.info('Application started successfully');
+    console.log('✓ Info log sent');
 
-    // Example 2: Manual log entry
-    await client.log({
-      timestamp: new Date().toISOString(),
-      log_level: 'ERROR',
-      message: 'Database connection failed',
-      app_name: 'my-app',
-      app_uuid: 'app-123'
-    });
-    console.log('✓ Error log sent successfully');
+    await logger.error('Database connection failed');
+    console.log('✓ Error log sent');
 
-    // Example 3: Batch logging
-    const logs = [
-      client.createLogEntry('DEBUG', 'Processing user request', 'my-app', 'app-123'),
-      client.createLogEntry('INFO', 'User authenticated', 'my-app', 'app-123'),
-      client.createLogEntry('WARN', 'High memory usage detected', 'my-app', 'app-123')
-    ];
+    await logger.debug('Processing user request');
+    console.log('✓ Debug log sent');
 
-    await client.logBatch(logs);
-    console.log('✓ Batch logs sent successfully');
+    await logger.warn('High memory usage detected');
+    console.log('✓ Warning log sent');
+
+    // Using the main log method
+    await logger.log('INFO', 'Custom log message');
+    console.log('✓ Custom log sent');
+
+    // With custom timestamp
+    await logger.info('Historical event', '2024-01-01T12:00:00Z');
+    console.log('✓ Log with custom timestamp sent');
 
   } catch (error) {
     console.error('❌ Failed to send logs:', error.message);

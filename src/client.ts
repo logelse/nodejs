@@ -1,25 +1,38 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
-import { LogEntry, LogelseClientOptions, LogelseApiResponse, LogelseApiError } from './types';
+import { LogEntry, LogelseClientOptions, LogLevel } from './types';
 
 /**
  * Logelse SDK Client for sending logs to the Logelse API
  */
 export class LogelseClient {
   private readonly apiKey: string;
+  private readonly appName: string;
+  private readonly appUuid: string;
   private readonly httpClient: AxiosInstance;
-  private readonly options: Required<LogelseClientOptions>;
+  private readonly options: Required<Omit<LogelseClientOptions, 'appName' | 'appUuid'>>;
 
   /**
    * Creates a new Logelse client instance
    * @param apiKey - Your Logelse API key
-   * @param options - Optional configuration options
+   * @param options - Configuration options including appName and appUuid
    */
-  constructor(apiKey: string, options: LogelseClientOptions = {}) {
+  constructor(apiKey: string, options: LogelseClientOptions) {
     if (!apiKey || typeof apiKey !== 'string') {
       throw new Error('API key is required and must be a string');
     }
 
+    if (!options.appName || typeof options.appName !== 'string') {
+      throw new Error('appName is required and must be a string');
+    }
+
+    if (!options.appUuid || typeof options.appUuid !== 'string') {
+      throw new Error('appUuid is required and must be a string');
+    }
+
     this.apiKey = apiKey;
+    this.appName = options.appName;
+    this.appUuid = options.appUuid;
+    
     this.options = {
       baseUrl: options.baseUrl || 'https://ingst.logelse.com',
       timeout: options.timeout || 5000,
@@ -39,109 +52,53 @@ export class LogelseClient {
   }
 
   /**
-   * Sends a single log entry to the Logelse API
-   * @param entry - The log entry to send
+   * Sends a log message to the Logelse API
+   * @param level - Log level (DEBUG, INFO, WARN, ERROR, FATAL)
+   * @param message - Log message
+   * @param timestamp - Optional timestamp (defaults to current time)
    * @returns Promise that resolves when the log is sent successfully
    */
-  async log(entry: LogEntry): Promise<void> {
-    this.validateLogEntry(entry);
+  async log(level: LogLevel | string, message: string, timestamp?: string): Promise<void> {
+    if (!level || typeof level !== 'string') {
+      throw new Error('Log level is required and must be a string');
+    }
+
+    if (!message || typeof message !== 'string') {
+      throw new Error('Message is required and must be a string');
+    }
+
+    const entry: LogEntry = {
+      timestamp: timestamp || new Date().toISOString(),
+      log_level: level,
+      message,
+      app_name: this.appName,
+      app_uuid: this.appUuid,
+    };
+
     await this.sendWithRetry('/logs', entry);
   }
 
   /**
-   * Sends multiple log entries to the Logelse API
-   * @param entries - Array of log entries to send
-   * @returns Promise that resolves when all logs are sent successfully
+   * Convenience methods for different log levels
    */
-  async logBatch(entries: LogEntry[]): Promise<void> {
-    if (!Array.isArray(entries) || entries.length === 0) {
-      throw new Error('Entries must be a non-empty array');
-    }
-
-    entries.forEach((entry, index) => {
-      try {
-        this.validateLogEntry(entry);
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        throw new Error(`Invalid log entry at index ${index}: ${errorMessage}`);
-      }
-    });
-
-    // Send each entry individually for now
-    // In the future, this could be optimized to use a batch endpoint
-    await Promise.all(entries.map(entry => this.sendWithRetry('/logs', entry)));
+  async debug(message: string, timestamp?: string): Promise<void> {
+    await this.log('DEBUG', message, timestamp);
   }
 
-  /**
-   * Creates a log entry with the current timestamp
-   * @param level - Log level
-   * @param message - Log message
-   * @param appName - Application name
-   * @param appUuid - Application UUID
-   * @returns LogEntry object
-   */
-  createLogEntry(
-    level: string,
-    message: string,
-    appName: string,
-    appUuid: string
-  ): LogEntry {
-    return {
-      timestamp: new Date().toISOString(),
-      log_level: level,
-      message,
-      app_name: appName,
-      app_uuid: appUuid,
-    };
+  async info(message: string, timestamp?: string): Promise<void> {
+    await this.log('INFO', message, timestamp);
   }
 
-  /**
-   * Convenience method to log with automatic timestamp
-   * @param level - Log level
-   * @param message - Log message
-   * @param appName - Application name
-   * @param appUuid - Application UUID
-   */
-  async logMessage(
-    level: string,
-    message: string,
-    appName: string,
-    appUuid: string
-  ): Promise<void> {
-    const entry = this.createLogEntry(level, message, appName, appUuid);
-    await this.log(entry);
+  async warn(message: string, timestamp?: string): Promise<void> {
+    await this.log('WARN', message, timestamp);
   }
 
-  /**
-   * Validates a log entry
-   * @param entry - Log entry to validate
-   */
-  private validateLogEntry(entry: LogEntry): void {
-    if (!entry || typeof entry !== 'object') {
-      throw new Error('Log entry must be an object');
-    }
+  async error(message: string, timestamp?: string): Promise<void> {
+    await this.log('ERROR', message, timestamp);
+  }
 
-    // Check required fields with proper typing
-    if (!entry.timestamp || typeof entry.timestamp !== 'string') {
-      throw new Error("Field 'timestamp' is required and must be a string");
-    }
-    if (!entry.log_level || typeof entry.log_level !== 'string') {
-      throw new Error("Field 'log_level' is required and must be a string");
-    }
-    if (!entry.message || typeof entry.message !== 'string') {
-      throw new Error("Field 'message' is required and must be a string");
-    }
-    if (!entry.app_name || typeof entry.app_name !== 'string') {
-      throw new Error("Field 'app_name' is required and must be a string");
-    }
-    if (!entry.app_uuid || typeof entry.app_uuid !== 'string') {
-      throw new Error("Field 'app_uuid' is required and must be a string");
-    }
-
-    // Validate timestamp format (basic ISO 8601 check)
-    if (isNaN(Date.parse(entry.timestamp))) {
-      throw new Error('Timestamp must be a valid ISO 8601 date string');
-    }
+  async fatal(message: string, timestamp?: string): Promise<void> {
+    await this.log('FATAL', message, timestamp);
   }
 
   /**

@@ -4,7 +4,7 @@
 export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL';
 
 /**
- * Log entry interface matching the Logelse API format
+ * Internal log entry interface matching the Logelse API format
  */
 export interface LogEntry {
   /** ISO 8601 timestamp string */
@@ -23,6 +23,10 @@ export interface LogEntry {
  * Configuration options for the Logelse client
  */
 export interface LogelseClientOptions {
+  /** Application name (required) */
+  appName: string;
+  /** Application UUID (required) */
+  appUuid: string;
   /** Base URL for the Logelse API (default: https://ingst.logelse.com) */
   baseUrl?: string;
   /** Request timeout in milliseconds (default: 5000) */

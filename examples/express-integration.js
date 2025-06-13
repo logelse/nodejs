@@ -1,6 +1,6 @@
 /**
  * Express.js integration example for @logelse/nodejs
- * This example shows how to integrate the SDK with an Express.js application
+ * This example shows the simplified API with Express.js
  */
 
 const express = require('express');
@@ -9,11 +9,11 @@ const { LogelseClient } = require('@logelse/nodejs');
 const app = express();
 const port = 3000;
 
-// Initialize Logelse client
+// Initialize Logelse client with simplified API
 const logger = new LogelseClient('YOUR_API_KEY_HERE', {
-  debug: true, // Enable debug logging
-  retryAttempts: 2,
-  timeout: 3000
+  appName: 'express-server',
+  appUuid: 'server-001',
+  debug: true // Enable debug logging
 });
 
 // Middleware to parse JSON
@@ -25,12 +25,7 @@ app.use(async (req, res, next) => {
   
   // Log the incoming request
   try {
-    await logger.logMessage(
-      'INFO',
-      `${req.method} ${req.path} - ${req.ip}`,
-      'express-server',
-      'server-001'
-    );
+    await logger.info(`${req.method} ${req.path} - ${req.ip}`);
   } catch (error) {
     console.error('Failed to log request:', error.message);
   }
@@ -39,12 +34,7 @@ app.use(async (req, res, next) => {
   res.on('finish', async () => {
     const duration = Date.now() - startTime;
     try {
-      await logger.logMessage(
-        'INFO',
-        `${req.method} ${req.path} - ${res.statusCode} - ${duration}ms`,
-        'express-server',
-        'server-001'
-      );
+      await logger.info(`${req.method} ${req.path} - ${res.statusCode} - ${duration}ms`);
     } catch (error) {
       console.error('Failed to log response:', error.message);
     }
@@ -67,37 +57,22 @@ app.get('/users/:id', async (req, res) => {
       throw new Error('User not found');
     }
     
-    await logger.logMessage(
-      'INFO',
-      `User ${userId} accessed`,
-      'express-server',
-      'server-001'
-    );
-    
+    await logger.info(`User ${userId} accessed`);
     res.json({ id: userId, name: `User ${userId}` });
   } catch (error) {
     // Log the error
-    await logger.logMessage(
-      'ERROR',
-      `Error accessing user ${userId}: ${error.message}`,
-      'express-server',
-      'server-001'
-    );
-    
+    await logger.error(`Error accessing user ${userId}: ${error.message}`);
     res.status(404).json({ error: error.message });
   }
 });
 
-app.post('/logs/test', async (req, res) => {
+app.post('/test-logs', async (req, res) => {
   try {
-    // Test batch logging
-    const testLogs = [
-      logger.createLogEntry('DEBUG', 'Test log 1', 'test-app', 'test-001'),
-      logger.createLogEntry('INFO', 'Test log 2', 'test-app', 'test-001'),
-      logger.createLogEntry('WARN', 'Test log 3', 'test-app', 'test-001')
-    ];
-    
-    await logger.logBatch(testLogs);
+    // Test different log levels
+    await logger.debug('Debug message from test endpoint');
+    await logger.info('Info message from test endpoint');
+    await logger.warn('Warning message from test endpoint');
+    await logger.error('Error message from test endpoint');
     
     res.json({ message: 'Test logs sent successfully' });
   } catch (error) {
@@ -109,12 +84,7 @@ app.post('/logs/test', async (req, res) => {
 app.use(async (err, req, res, next) => {
   // Log the error
   try {
-    await logger.logMessage(
-      'ERROR',
-      `Unhandled error: ${err.message} - ${req.method} ${req.path}`,
-      'express-server',
-      'server-001'
-    );
+    await logger.error(`Unhandled error: ${err.message} - ${req.method} ${req.path}`);
   } catch (logError) {
     console.error('Failed to log error:', logError.message);
   }
@@ -125,12 +95,7 @@ app.use(async (err, req, res, next) => {
 // 404 handler
 app.use(async (req, res) => {
   try {
-    await logger.logMessage(
-      'WARN',
-      `404 - ${req.method} ${req.path}`,
-      'express-server',
-      'server-001'
-    );
+    await logger.warn(`404 - ${req.method} ${req.path}`);
   } catch (error) {
     console.error('Failed to log 404:', error.message);
   }
@@ -144,12 +109,7 @@ app.listen(port, async () => {
   
   // Log server start
   try {
-    await logger.logMessage(
-      'INFO',
-      `Express server started on port ${port}`,
-      'express-server',
-      'server-001'
-    );
+    await logger.info(`Express server started on port ${port}`);
   } catch (error) {
     console.error('Failed to log server start:', error.message);
   }
@@ -158,12 +118,7 @@ app.listen(port, async () => {
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   try {
-    await logger.logMessage(
-      'INFO',
-      'Express server shutting down',
-      'express-server',
-      'server-001'
-    );
+    await logger.info('Express server shutting down');
   } catch (error) {
     console.error('Failed to log shutdown:', error.message);
   }
